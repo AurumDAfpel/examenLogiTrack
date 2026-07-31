@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LogiTrack S.A. - Panel de Control</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #eef2f5; margin: 0; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; }
+        .card { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        h2 { margin-top: 0; color: #333; }
+        input, button { padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; }
+        button { background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { background-color: #0056b3; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f4f4f4; }
+        .hidden { display: none; }
+        .alert { color: red; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>System LogiTrack S.A.</h1>
+
+    <!-- Sección Login -->
+    <div id="login-card" class="card">
+        <h2>Iniciar Sesión</h2>
+        <input type="text" id="user" placeholder="Usuario (ej: admin)">
+        <input type="password" id="pass" placeholder="Contraseña (ej: admin123)">
+        <button onclick="login()">Ingresar</button>
+        <p id="login-error" class="alert"></p>
+    </div>
+
+    <!-- Sección Dashboard -->
+    <div id="dashboard-card" class="card hidden">
+        <h2>Panel Principal</h2>
+        <p>Sesión activa con Token JWT.</p>
+        <button onclick="cargarProductos()" style="width: auto;">Cargar Productos</button>
+        <button onclick="cargarStockBajo()" style="width: auto; background-color: #dc3545;">Alertas Stock Bajo (< 10)</button>
+        <button onclick="logout()" style="width: auto; background-color: #6c757d;">Cerrar Sesión</button>
+
+        <h3>Listado de Productos</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Nombre</th>
+                    <th>Categoría</th>
+                    <th>Stock</th>
+                    <th>Precio</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-body">
+                <tr><td colspan="5">Haz clic en un botón para consultar datos...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Sección Usuarios (solo administradores) -->
+    <div id="usuarios-card" class="card hidden">
+        <h2>Gestión de Usuarios</h2>
+        <p>Solo el administrador puede crear, ver y eliminar usuarios.</p>
+
+        <h3>Crear nuevo usuario</h3>
+        <input type="text" id="nuevo-user" placeholder="Nombre de usuario">
+        <input type="password" id="nuevo-pass" placeholder="Contraseña (mínimo 6 caracteres)">
+        <select id="nuevo-role" style="padding:10px; margin:5px 0; width:100%; box-sizing:border-box;">
+            <option value="ROLE_EMPLEADO">Empleado</option>
+            <option value="ROLE_ADMIN">Administrador</option>
+        </select>
+        <button onclick="crearUsuario()" style="width: auto; background-color: #28a745;">Crear Usuario</button>
+
+        <h3>Usuarios existentes</h3>
+        <button onclick="cargarUsuarios()" style="width: auto;">Cargar Usuarios</button>
+        <p id="usuarios-error" class="alert"></p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Usuario</th>
+                    <th>Rol</th>
+                    <th>Acción</th>
+                </tr>
+            </thead>
+            <tbody id="usuarios-body">
+                <tr><td colspan="4">Haz clic en "Cargar Usuarios"...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    const API_URL = 'http://localhost:8081/api';
+
+    async function login() {
+        const username = document.getElementById('user').value;
+        const password = document.getElementById('pass').value;
+
+        try {
+            const response = await fetch(`${API_URL}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                localStorage.setItem('jwt_token', data.token);
+                document.getElementById('login-card').classList.add('hidden');
+                document.getElementById('dashboard-card').classList.remove('hidden');
+                document.getElementById('usuarios-card').classList.remove('hidden');
+            } else {
+                document.getElementById('login-error').innerText = "Credenciales inválidas";
+            }
+        } catch (err) {
+            document.getElementById('login-error').innerText = "Error de conexión con el servidor";
+        }
+    }
+
+    async function cargarProductos() {
+        consultarEndpoint('/productos');
+    }
+
+    async function cargarStockBajo() {
+        consultarEndpoint('/productos/stock-bajo');
+    }
+
+    async function consultarEndpoint(path) {
+        const token = localStorage.getItem('jwt_token');
+        const response = await fetch(`${API_URL}${path}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            const tbody = document.getElementById('tabla-body');
+            tbody.innerHTML = '';
+
+            data.forEach(p => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${p.id}</td>
+                        <td>${p.nombre}</td>
+                        <td>${p.categoria}</td>
+                        <td style="${p.stock < 10 ? 'color:red; font-weight:bold;' : ''}">${p.stock}</td>
+                        <td>$${p.precio}</td>
+                    </tr>
+                `;
+            });
+        }
+    }
+
+    async function crearUsuario() {
+        const username = document.getElementById('nuevo-user').value;
+        const password = document.getElementById('nuevo-pass').value;
+        const role = document.getElementById('nuevo-role').value;
+        const token = localStorage.getItem('jwt_token');
+        const errorEl = document.getElementById('usuarios-error');
+        errorEl.innerText = '';
+
+        try {
+            const response = await fetch(`${API_URL}/usuarios`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ username, password, role })
+            });
+
+            if (response.ok) {
+                document.getElementById('nuevo-user').value = '';
+                document.getElementById('nuevo-pass').value = '';
+                cargarUsuarios();
+            } else {
+                const data = await response.json().catch(() => null);
+                errorEl.innerText = data?.mensaje || "No se pudo crear el usuario.";
+            }
+        } catch (err) {
+            errorEl.innerText = "Error de conexión con el servidor";
+        }
+    }
+
+    async function cargarUsuarios() {
+        const token = localStorage.getItem('jwt_token');
+        const errorEl = document.getElementById('usuarios-error');
+        errorEl.innerText = '';
+
+        try {
+            const response = await fetch(`${API_URL}/usuarios`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (response.status === 403) {
+                errorEl.innerText = "No tienes permisos de administrador para ver los usuarios.";
+                document.getElementById('usuarios-body').innerHTML = '';
+                return;
+            }
+
+            if (!response.ok) {
+                errorEl.innerText = "No se pudieron cargar los usuarios.";
+                return;
+            }
+
+            const data = await response.json();
+            const tbody = document.getElementById('usuarios-body');
+            tbody.innerHTML = '';
+
+            data.forEach(u => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${u.id}</td>
+                        <td>${u.username}</td>
+                        <td>${u.role}</td>
+                        <td><button style="width:auto; background-color:#dc3545;" onclick="eliminarUsuario(${u.id})">Eliminar</button></td>
+                    </tr>
+                `;
+            });
+        } catch (err) {
+            errorEl.innerText = "Error de conexión con el servidor";
+        }
+    }
+
+    async function eliminarUsuario(id) {
+        if (!confirm('¿Seguro que quieres eliminar este usuario? Esta acción no se puede deshacer.')) return;
+
+        const token = localStorage.getItem('jwt_token');
+        const errorEl = document.getElementById('usuarios-error');
+        errorEl.innerText = '';
+
+        try {
+            const response = await fetch(`${API_URL}/usuarios/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (response.ok) {
+                cargarUsuarios();
+            } else {
+                const data = await response.json().catch(() => null);
+                errorEl.innerText = data?.mensaje || "No se pudo eliminar el usuario.";
+            }
+        } catch (err) {
+            errorEl.innerText = "Error de conexión con el servidor";
+        }
+    }
+
+    function logout() {
+        localStorage.removeItem('jwt_token');
+        document.getElementById('login-card').classList.remove('hidden');
+        document.getElementById('dashboard-card').classList.add('hidden');
+        document.getElementById('usuarios-card').classList.add('hidden');
+    }
+</script>
+
+</body>
+</html>
