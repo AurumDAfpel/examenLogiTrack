@@ -100,6 +100,72 @@
         </div>
     </div>
 
+    <!-- Sección Reportes -->
+    <div id="reportes-card" class="card hidden">
+        <h2>Reportes</h2>
+
+        <h3>Reporte de Movimientos</h3>
+        <input type="number" id="rep-mov-bodega" placeholder="ID Bodega (opcional)">
+        <input type="number" id="rep-mov-producto" placeholder="ID Producto (opcional)">
+        <select id="rep-mov-tipo" style="padding:10px; margin:5px 0; width:100%; box-sizing:border-box;">
+            <option value="">Todos los tipos</option>
+            <option value="ENTRADA">Entrada</option>
+            <option value="SALIDA">Salida</option>
+            <option value="TRANSFERENCIA">Transferencia</option>
+        </select>
+        <label style="font-size:13px; color:#555;">Fecha inicio</label>
+        <input type="datetime-local" id="rep-mov-fecha-inicio">
+        <label style="font-size:13px; color:#555;">Fecha fin</label>
+        <input type="datetime-local" id="rep-mov-fecha-fin">
+        <button onclick="cargarReporteMovimientos()" style="width: auto;">Generar Reporte de Movimientos</button>
+        <p id="rep-mov-error" class="alert"></p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Fecha</th>
+                    <th>Tipo</th>
+                    <th>Producto</th>
+                    <th>Cantidad</th>
+                    <th>Bodega Origen</th>
+                    <th>Bodega Destino</th>
+                    <th>Responsable</th>
+                </tr>
+            </thead>
+            <tbody id="rep-mov-body">
+                <tr><td colspan="8">Aplica filtros y genera el reporte...</td></tr>
+            </tbody>
+        </table>
+
+        <h3 style="margin-top:30px;">Reporte de Auditoría (solo administrador)</h3>
+        <input type="text" id="rep-aud-producto" placeholder="Texto a buscar en producto/entidad (opcional)">
+        <input type="text" id="rep-aud-campo" placeholder="Texto a buscar en campo modificado (opcional)">
+        <label style="font-size:13px; color:#555;">Fecha inicio</label>
+        <input type="datetime-local" id="rep-aud-fecha-inicio">
+        <label style="font-size:13px; color:#555;">Fecha fin</label>
+        <input type="datetime-local" id="rep-aud-fecha-fin">
+        <button onclick="cargarReporteAuditoria()" style="width: auto;">Generar Reporte de Auditoría</button>
+        <p id="rep-aud-error" class="alert"></p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Fecha/Hora</th>
+                    <th>Operación</th>
+                    <th>Usuario</th>
+                    <th>Entidad</th>
+                    <th>Valor Anterior</th>
+                    <th>Valor Nuevo</th>
+                </tr>
+            </thead>
+            <tbody id="rep-aud-body">
+                <tr><td colspan="7">Aplica filtros y genera el reporte...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
     <!-- Sección Usuarios (solo administradores) -->
     <div id="usuarios-card" class="card hidden">
         <h2>Gestión de Usuarios</h2>
@@ -154,6 +220,7 @@
                 document.getElementById('login-card').classList.add('hidden');
                 document.getElementById('dashboard-card').classList.remove('hidden');
                 document.getElementById('bodegas-card').classList.remove('hidden');
+                document.getElementById('reportes-card').classList.remove('hidden');
                 document.getElementById('usuarios-card').classList.remove('hidden');
             } else {
                 document.getElementById('login-error').innerText = "Credenciales inválidas";
@@ -418,11 +485,127 @@
         }
     }
 
+    async function cargarReporteMovimientos() {
+        const bodegaId = document.getElementById('rep-mov-bodega').value;
+        const productoId = document.getElementById('rep-mov-producto').value;
+        const tipoMovimiento = document.getElementById('rep-mov-tipo').value;
+        const fechaInicio = document.getElementById('rep-mov-fecha-inicio').value;
+        const fechaFin = document.getElementById('rep-mov-fecha-fin').value;
+        const token = localStorage.getItem('jwt_token');
+        const errorEl = document.getElementById('rep-mov-error');
+        errorEl.innerText = '';
+
+        const params = new URLSearchParams();
+        if (bodegaId) params.append('bodegaId', bodegaId);
+        if (productoId) params.append('productoId', productoId);
+        if (tipoMovimiento) params.append('tipoMovimiento', tipoMovimiento);
+        if (fechaInicio) params.append('fechaInicio', fechaInicio);
+        if (fechaFin) params.append('fechaFin', fechaFin);
+
+        try {
+            const response = await fetch(`${API_URL}/reportes/movimientos?${params.toString()}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (!response.ok) {
+                const data = await response.json().catch(() => null);
+                errorEl.innerText = data?.mensaje || "No se pudo generar el reporte de movimientos.";
+                return;
+            }
+
+            const data = await response.json();
+            const tbody = document.getElementById('rep-mov-body');
+            tbody.innerHTML = '';
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8">No hay movimientos que coincidan con los filtros.</td></tr>';
+                return;
+            }
+
+            data.forEach(m => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${m.id}</td>
+                        <td>${m.fecha ? m.fecha.replace('T', ' ') : ''}</td>
+                        <td>${m.tipoMovimiento}</td>
+                        <td>${m.productoNombre ?? ''}</td>
+                        <td>${m.cantidad}</td>
+                        <td>${m.bodegaOrigenNombre ?? '-'}</td>
+                        <td>${m.bodegaDestinoNombre ?? '-'}</td>
+                        <td>${m.usuarioResponsable ?? ''}</td>
+                    </tr>
+                `;
+            });
+        } catch (err) {
+            errorEl.innerText = "Error de conexión con el servidor";
+        }
+    }
+
+    async function cargarReporteAuditoria() {
+        const producto = document.getElementById('rep-aud-producto').value;
+        const campoModificado = document.getElementById('rep-aud-campo').value;
+        const fechaInicio = document.getElementById('rep-aud-fecha-inicio').value;
+        const fechaFin = document.getElementById('rep-aud-fecha-fin').value;
+        const token = localStorage.getItem('jwt_token');
+        const errorEl = document.getElementById('rep-aud-error');
+        errorEl.innerText = '';
+
+        const params = new URLSearchParams();
+        if (producto) params.append('producto', producto);
+        if (campoModificado) params.append('campoModificado', campoModificado);
+        if (fechaInicio) params.append('fechaInicio', fechaInicio);
+        if (fechaFin) params.append('fechaFin', fechaFin);
+
+        try {
+            const response = await fetch(`${API_URL}/reportes/auditoria?${params.toString()}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (response.status === 403) {
+                errorEl.innerText = "Solo un administrador puede ver el reporte de auditoría.";
+                document.getElementById('rep-aud-body').innerHTML = '';
+                return;
+            }
+
+            if (!response.ok) {
+                const data = await response.json().catch(() => null);
+                errorEl.innerText = data?.mensaje || "No se pudo generar el reporte de auditoría.";
+                return;
+            }
+
+            const data = await response.json();
+            const tbody = document.getElementById('rep-aud-body');
+            tbody.innerHTML = '';
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7">No hay registros de auditoría que coincidan con los filtros.</td></tr>';
+                return;
+            }
+
+            data.forEach(a => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${a.id}</td>
+                        <td>${a.fechaHora ? a.fechaHora.replace('T', ' ') : ''}</td>
+                        <td>${a.tipoOperacion}</td>
+                        <td>${a.usuario ?? ''}</td>
+                        <td>${a.entidadAfectada ?? ''}</td>
+                        <td>${a.valoresAnteriores ?? ''}</td>
+                        <td>${a.valoresNuevos ?? ''}</td>
+                    </tr>
+                `;
+            });
+        } catch (err) {
+            errorEl.innerText = "Error de conexión con el servidor";
+        }
+    }
+
     function logout() {
         localStorage.removeItem('jwt_token');
         document.getElementById('login-card').classList.remove('hidden');
         document.getElementById('dashboard-card').classList.add('hidden');
         document.getElementById('bodegas-card').classList.add('hidden');
+        document.getElementById('reportes-card').classList.add('hidden');
         document.getElementById('usuarios-card').classList.add('hidden');
     }
 </script>
